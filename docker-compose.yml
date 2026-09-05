@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: webhooks
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: webhooks
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      ENABLE_WORKER: "false"
+      LEASE_TIMEOUT_SECONDS: "30"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker1:
+    build: ./backend
+    command: ["node", "dist/worker-main.js"]
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: webhooks
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      ENABLE_WORKER: "true"
+      WORKER_ID: worker-1
+      LEASE_TIMEOUT_SECONDS: "30"
+      POLL_INTERVAL_MS: "1000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker2:
+    build: ./backend
+    command: ["node", "dist/worker-main.js"]
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: webhooks
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      ENABLE_WORKER: "true"
+      WORKER_ID: worker-2
+      LEASE_TIMEOUT_SECONDS: "30"
+      POLL_INTERVAL_MS: "1000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
